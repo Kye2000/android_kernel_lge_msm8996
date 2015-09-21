@@ -726,6 +726,12 @@ static irqreturn_t irq_nested_primary_handler(int irq, void *dev_id)
 	return IRQ_NONE;
 }
 
+static irqreturn_t irq_forced_secondary_handler(int irq, void *dev_id)
+{
+	WARN(1, "Secondary action handler called for irq %d\n", irq);
+	return IRQ_NONE;
+}
+
 static int irq_wait_for_interrupt(struct irqaction *action)
 {
 	set_current_state(TASK_INTERRUPTIBLE);
@@ -752,7 +758,8 @@ static int irq_wait_for_interrupt(struct irqaction *action)
 static void irq_finalize_oneshot(struct irq_desc *desc,
 				 struct irqaction *action)
 {
-	if (!(desc->istate & IRQS_ONESHOT))
+	if (!(desc->istate & IRQS_ONESHOT) ||
+	    action->handler == irq_forced_secondary_handler)
 		return;
 again:
 	chip_bus_lock(desc);
@@ -906,6 +913,18 @@ static void irq_thread_dtor(struct callback_head *unused)
 	irq_finalize_oneshot(desc, action);
 }
 
+static void irq_wake_secondary(struct irq_desc *desc, struct irqaction *action)
+{
+	struct irqaction *secondary = action->secondary;
+
+	if (WARN_ON_ONCE(!secondary))
+		return;
+
+	raw_spin_lock_irq(&desc->lock);
+	__irq_wake_thread(desc, secondary);
+	raw_spin_unlock_irq(&desc->lock);
+}
+
 /*
  * Interrupt handler thread
  */
@@ -936,6 +955,8 @@ static int irq_thread(void *data)
 		action_ret = handler_fn(desc, action);
 		if (action_ret == IRQ_HANDLED)
 			atomic_inc(&desc->threads_handled);
+		if (action_ret == IRQ_WAKE_THREAD)
+			irq_wake_secondary(desc, action);
 
 		wake_threads_waitq(desc);
 	}
@@ -980,20 +1001,36 @@ void irq_wake_thread(unsigned int irq, void *dev_id)
 }
 EXPORT_SYMBOL_GPL(irq_wake_thread);
 
-static void irq_setup_forced_threading(struct irqaction *new)
+static int irq_setup_forced_threading(struct irqaction *new)
 {
 	if (!force_irqthreads)
-		return;
+		return 0;
 	if (new->flags & (IRQF_NO_THREAD | IRQF_PERCPU | IRQF_ONESHOT))
-		return;
+		return 0;
 
 	new->flags |= IRQF_ONESHOT;
 
-	if (!new->thread_fn) {
-		set_bit(IRQTF_FORCED_THREAD, &new->thread_flags);
-		new->thread_fn = new->handler;
-		new->handler = irq_default_primary_handler;
+	/*
+	 * Handle the case where we have a real primary handler and a
+	 * thread handler. We force thread them as well by creating a
+	 * secondary action.
+	 */
+	if (new->handler != irq_default_primary_handler && new->thread_fn) {
+		/* Allocate the secondary action */
+		new->secondary = kzalloc(sizeof(struct irqaction), GFP_KERNEL);
+		if (!new->secondary)
+			return -ENOMEM;
+		new->secondary->handler = irq_forced_secondary_handler;
+		new->secondary->thread_fn = new->thread_fn;
+		new->secondary->dev_id = new->dev_id;
+		new->secondary->irq = new->irq;
+		new->secondary->name = new->name;
 	}
+	/* Deal with the primary handler */
+	set_bit(IRQTF_FORCED_THREAD, &new->thread_flags);
+	new->thread_fn = new->handler;
+	new->handler = irq_default_primary_handler;
+	return 0;
 }
 
 static int irq_request_resources(struct irq_desc *desc)
@@ -1141,6 +1178,8 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 	if (!try_module_get(desc->owner))
 		return -ENODEV;
 
+	new->irq = irq;
+
 	/*
 	 * Check whether the interrupt nests into another interrupt
 	 * thread.
@@ -1158,8 +1197,11 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 		 */
 		new->handler = irq_nested_primary_handler;
 	} else {
-		if (irq_settings_can_thread(desc))
-			irq_setup_forced_threading(new);
+		if (irq_settings_can_thread(desc)) {
+			ret = irq_setup_forced_threading(new);
+			if (ret)
+				goto out_mput;
+		}
 	}
 
 	/*
@@ -1360,7 +1402,6 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 				   irq, nmsk, omsk);
 	}
 
-	new->irq = irq;
 	*old_ptr = new;
 
 	irq_pm_install_action(desc, new);
@@ -1386,6 +1427,8 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 	 */
 	if (new->thread)
 		wake_up_process(new->thread);
+	if (new->secondary)
+		wake_up_process(new->secondary->thread);
 
 	register_irq_proc(irq, desc);
 	new->dir = NULL;
@@ -1413,6 +1456,13 @@ out_thread:
 		struct task_struct *t = new->thread;
 
 		new->thread = NULL;
+		kthread_stop(t);
+		put_task_struct(t);
+	}
+	if (new->secondary && new->secondary->thread) {
+		struct task_struct *t = new->secondary->thread;
+
+		new->secondary->thread = NULL;
 		kthread_stop(t);
 		put_task_struct(t);
 	}
@@ -1523,9 +1573,14 @@ static struct irqaction *__free_irq(unsigned int irq, void *dev_id)
 	if (action->thread) {
 		kthread_stop(action->thread);
 		put_task_struct(action->thread);
+		if (action->secondary && action->secondary->thread) {
+			kthread_stop(action->secondary->thread);
+			put_task_struct(action->secondary->thread);
+		}
 	}
 
 	module_put(desc->owner);
+	kfree(action->secondary);
 	return action;
 }
 
@@ -1664,8 +1719,10 @@ int request_threaded_irq(unsigned int irq, irq_handler_t handler,
 	retval = __setup_irq(irq, desc, action);
 	chip_bus_sync_unlock(desc);
 
-	if (retval)
+	if (retval) {
+		kfree(action->secondary);
 		kfree(action);
+	}
 
 #ifdef CONFIG_DEBUG_SHIRQ_FIXME
 	if (!retval && (irqflags & IRQF_SHARED)) {
