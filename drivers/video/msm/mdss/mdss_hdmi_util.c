@@ -1224,11 +1224,15 @@ int hdmi_ddc_write(struct hdmi_tx_ddc_ctrl *ddc_ctrl)
 	u32 time_out_count;
 	struct hdmi_tx_ddc_data *ddc_data;
 	u32 wait_time;
+<<<<<<< HEAD
 #if IS_ENABLED(CONFIG_LGE_DISPLAY_COMMON)
 	int busy_wait_us = 0;
 #else
 	int busy_wait_us;
 #endif
+=======
+	int busy_wait_us = 0;
+>>>>>>> cf6daef43324... ANDROID: fix uninitilized variable
 
 	if (!ddc_ctrl || !ddc_ctrl->io) {
 		pr_err("invalid input\n");
