@@ -250,15 +250,6 @@ void cpufreq_task_stats_init(struct task_struct *p)
 	WRITE_ONCE(p->time_in_state, kzalloc(alloc_size, GFP_KERNEL));
 }
 
-void cpufreq_task_stats_exit(struct task_struct *p)
-{
-	void *temp = p->time_in_state;
-
-	WRITE_ONCE(p->time_in_state, NULL);
-	mb(); /* p->time_in_state */
-	kfree(temp);
-}
-
 int proc_time_in_state_show(struct seq_file *m, struct pid_namespace *ns,
 			    struct pid *pid, struct task_struct *p)
 {
@@ -908,6 +899,8 @@ static int process_notifier(struct notifier_block *self,
 {
 	struct task_struct *task = v;
 	struct uid_entry *uid_entry;
+	unsigned long flags;
+	void *temp;
 	uid_t uid;
 	int i;
 
@@ -920,7 +913,7 @@ static int process_notifier(struct notifier_block *self,
 	uid_entry = find_or_register_uid(uid);
 	if (!uid_entry) {
 		rt_mutex_unlock(&uid_lock);
-		pr_err("%s: failed to find uid %d\n", __func__, uid);
+		pr_err("%s: failed to find/register uid %d\n", __func__, uid);
 		return NOTIFY_OK;
 	}
 
@@ -941,8 +934,12 @@ static int process_notifier(struct notifier_block *self,
 		uid_entry->dead_time_in_state[i] +=
 			atomic_read(&task->time_in_state[i]);
 	}
+	temp = task->time_in_state;
+	task->time_in_state = NULL;
+	spin_unlock_irqrestore(&task_time_in_state_lock, flags);
 
 	rt_mutex_unlock(&uid_lock);
+	kfree(temp);
 	return NOTIFY_OK;
 }
 
