@@ -1,4 +1,9 @@
+<<<<<<< HEAD
 /* Copyright (c) 2014-2015, 2016 The Linux Foundation. All rights reserved.
+=======
+/* Copyright (c) 2014-2016, 2018 The Linux Foundation.
+ * All rights reserved.
+>>>>>>> cd15aa7b62cd... diag: Initialize memory device memory pools
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -352,12 +357,12 @@ int diag_md_close_peripheral(int id, uint8_t peripheral)
 	return 0;
 }
 
-int diag_md_init()
+int diag_md_init(void)
 {
 	int i, j;
 	struct diag_md_info *ch = NULL;
 
-	for (i = 0; i < NUM_DIAG_MD_DEV; i++) {
+	for (i = 0; i < DIAG_MD_LOCAL_LAST; i++) {
 		ch = &diag_md[i];
 		ch->num_tbl_entries = diag_mempools[ch->mempool].poolsize;
 		ch->tbl = kzalloc(ch->num_tbl_entries *
@@ -416,7 +421,20 @@ void diag_md_exit(void)
 	int i;
 	struct diag_md_info *ch = NULL;
 
-	for (i = 0; i < NUM_DIAG_MD_DEV; i++) {
+	for (i = 0; i < DIAG_MD_LOCAL_LAST; i++) {
+		ch = &diag_md[i];
+		kfree(ch->tbl);
+		ch->num_tbl_entries = 0;
+		ch->ops = NULL;
+	}
+}
+
+void diag_md_mdm_exit(void)
+{
+	int i;
+	struct diag_md_info *ch = NULL;
+
+	for (i = DIAG_MD_BRIDGE_BASE; i < NUM_DIAG_MD_DEV; i++) {
 		ch = &diag_md[i];
 		kfree(ch->tbl);
 		ch->num_tbl_entries = 0;
