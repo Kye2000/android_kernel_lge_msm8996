@@ -62,6 +62,8 @@
 #define RECHARGE_SOC_THR_OFFSET		0
 #define CHG_TERM_CURR_WORD		14
 #define CHG_TERM_CURR_OFFSET		1
+#define SYNC_SLEEP_THR_WORD		14
+#define SYNC_SLEEP_THR_OFFSET		3
 #define EMPTY_VOLT_WORD			15
 #define EMPTY_VOLT_OFFSET		0
 #define VBATT_LOW_WORD			15
@@ -129,6 +131,8 @@
 #define DELTA_MSOC_THR_v2_OFFSET	0
 #define RECHARGE_SOC_THR_v2_WORD	14
 #define RECHARGE_SOC_THR_v2_OFFSET	1
+#define SYNC_SLEEP_THR_v2_WORD		14
+#define SYNC_SLEEP_THR_v2_OFFSET	2
 #define CHG_TERM_CURR_v2_WORD		15
 #define CHG_TERM_BASE_CURR_v2_OFFSET	0
 #define CHG_TERM_CURR_v2_OFFSET		1
@@ -211,6 +215,8 @@ static struct fg_sram_param pmi8998_v1_sram_params[] = {
 		2048, 100, 0, fg_encode_default, NULL),
 	PARAM(RECHARGE_SOC_THR, RECHARGE_SOC_THR_WORD, RECHARGE_SOC_THR_OFFSET,
 		1, 256, 100, 0, fg_encode_default, NULL),
+	PARAM(SYNC_SLEEP_THR, SYNC_SLEEP_THR_WORD, SYNC_SLEEP_THR_OFFSET,
+		1, 100000, 390625, 0, fg_encode_default, NULL),
 	PARAM(ESR_TIMER_DISCHG_MAX, ESR_TIMER_DISCHG_MAX_WORD,
 		ESR_TIMER_DISCHG_MAX_OFFSET, 2, 1, 1, 0, fg_encode_default,
 		NULL),
@@ -288,6 +294,8 @@ static struct fg_sram_param pmi8998_v2_sram_params[] = {
 	PARAM(RECHARGE_SOC_THR, RECHARGE_SOC_THR_v2_WORD,
 		RECHARGE_SOC_THR_v2_OFFSET, 1, 256, 100, 0, fg_encode_default,
 		NULL),
+	PARAM(SYNC_SLEEP_THR, SYNC_SLEEP_THR_v2_WORD, SYNC_SLEEP_THR_v2_OFFSET,
+		1, 100000, 390625, 0, fg_encode_default, NULL),
 	PARAM(RECHARGE_VBATT_THR, RECHARGE_VBATT_THR_v2_WORD,
 		RECHARGE_VBATT_THR_v2_OFFSET, 1, 1000, 15625, -2000,
 		fg_encode_voltage, NULL),
@@ -3491,6 +3499,33 @@ static int fg_hw_init(struct fg_chip *chip)
 		}
 	}
 
+	if (chip->dt.use_esr_sw) {
+		/* Enable ESR extraction explicitly */
+		rc = fg_sram_masked_write(chip, ESR_EXTRACTION_ENABLE_WORD,
+				ESR_EXTRACTION_ENABLE_OFFSET,
+				ESR_EXTRACTION_ENABLE_MASK,
+				0x1, FG_IMA_DEFAULT);
+		if (rc < 0) {
+			pr_err("Error in enabling ESR extraction rc=%d\n", rc);
+			return rc;
+		}
+	}
+
+	if (chip->dt.sync_sleep_threshold_ma != -EINVAL) {
+		fg_encode(chip->sp, FG_SRAM_SYNC_SLEEP_THR,
+			chip->dt.sync_sleep_threshold_ma, buf);
+		rc = fg_sram_write(chip,
+				chip->sp[FG_SRAM_SYNC_SLEEP_THR].addr_word,
+				chip->sp[FG_SRAM_SYNC_SLEEP_THR].addr_byte, buf,
+				chip->sp[FG_SRAM_SYNC_SLEEP_THR].len,
+				FG_IMA_DEFAULT);
+		if (rc < 0) {
+			pr_err("Error in writing sync_sleep_threshold=%d\n",
+				rc);
+			return rc;
+		}
+	}
+
 	return 0;
 }
 
@@ -4364,6 +4399,19 @@ static int fg_parse_dt(struct fg_chip *chip)
 		if (temp >= 60 || temp <= 240)
 			chip->dt.esr_meas_curr_ma = temp;
 	}
+
+	chip->dt.sync_sleep_threshold_ma = -EINVAL;
+	rc = of_property_read_u32(node,
+		"qcom,fg-sync-sleep-threshold-ma", &temp);
+	if (!rc) {
+		if (temp >= 0 && temp < 997)
+			chip->dt.sync_sleep_threshold_ma = temp;
+	}
+
+	chip->dt.use_esr_sw = of_property_read_bool(node, "qcom,fg-use-sw-esr");
+
+	chip->dt.disable_esr_pull_dn = of_property_read_bool(node,
+					"qcom,fg-disable-esr-pull-dn");
 
 	return 0;
 }
