@@ -661,13 +661,6 @@ int  proc_concurrent_active_time_show(struct seq_file *m,
 	struct pid_namespace *ns, struct pid *pid, struct task_struct *p);
 int single_uid_time_in_state_open(struct inode *inode, struct file *file);
 
-static inline void acct_update_power(struct task_struct *p,
-	cputime_t cputime) {}
-static inline void cpufreq_task_stats_init(struct task_struct *p) {}
-static inline void cpufreq_task_stats_alloc(struct task_struct *p) {}
-static inline void cpufreq_task_stats_free(struct task_struct *p) {}
-static inline void cpufreq_task_stats_exit(struct task_struct *p) {}
-
 struct sched_domain;
 unsigned long cpufreq_scale_freq_capacity(struct sched_domain *sd, int cpu);
 unsigned long cpufreq_scale_max_freq_capacity(int cpu);
