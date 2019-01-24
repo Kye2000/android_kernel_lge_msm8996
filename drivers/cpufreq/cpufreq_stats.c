@@ -237,8 +237,6 @@ static int cpufreq_stats_update(unsigned int cpu)
 
 void cpufreq_task_stats_init(struct task_struct *p)
 {
-	size_t alloc_size;
-	void *temp;
 	unsigned long flags;
 
 	spin_lock_irqsave(&task_time_in_state_lock, flags);
