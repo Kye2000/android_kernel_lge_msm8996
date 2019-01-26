@@ -4379,52 +4379,6 @@ static int tasha_codec_enable_lineout_pa(struct snd_soc_dapm_widget *w,
 	return ret;
 }
 
-static void tasha_spk_anc_update_callback(struct work_struct *work)
-{
-	struct spk_anc_work *spk_anc_dwork;
-	struct tasha_priv *tasha;
-	struct delayed_work *delayed_work;
-	struct snd_soc_codec *codec;
-
-	delayed_work = to_delayed_work(work);
-	spk_anc_dwork = container_of(delayed_work, struct spk_anc_work, dwork);
-	tasha = spk_anc_dwork->tasha;
-	codec = tasha->codec;
-
-	snd_soc_update_bits(codec, WCD9335_CDC_RX7_RX_PATH_CFG0, 0x10, 0x10);
-}
-
-static int tasha_codec_enable_spk_anc(struct snd_soc_dapm_widget *w,
-				      struct snd_kcontrol *kcontrol,
-				      int event)
-{
-	int ret = 0;
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	struct tasha_priv *tasha = snd_soc_codec_get_drvdata(codec);
-
-	dev_dbg(codec->dev, "%s %s %d %d\n", __func__, w->name, event,
-		tasha->anc_func);
-
-	if (!tasha->anc_func)
-		return 0;
-
-	switch (event) {
-	case SND_SOC_DAPM_PRE_PMU:
-		ret = tasha_codec_enable_anc(w, kcontrol, event);
-		queue_delayed_work(system_power_efficient_wq,
-				      &tasha->spk_anc_dwork.dwork,
-				      msecs_to_jiffies(spk_anc_en_delay));
-		break;
-	case SND_SOC_DAPM_POST_PMD:
-		cancel_delayed_work_sync(&tasha->spk_anc_dwork.dwork);
-		snd_soc_update_bits(codec, WCD9335_CDC_RX7_RX_PATH_CFG0,
-				    0x10, 0x00);
-		ret = tasha_codec_enable_anc(w, kcontrol, event);
-		break;
-	}
-	return ret;
-}
-
 static int tasha_codec_enable_ear_pa(struct snd_soc_dapm_widget *w,
 				     struct snd_kcontrol *kcontrol,
 				     int event)
@@ -6093,12 +6047,11 @@ static int tasha_codec_enable_dec(struct snd_soc_dapm_widget *w,
 			tx_unmute_delay = pdata->mic_unmute_delay;
 
 		/* schedule work queue to Remove Mute */
-		queue_delayed_work(system_power_efficient_wq,
-				      &tasha->tx_mute_dwork[decimator].dwork,
+		schedule_delayed_work(&tasha->tx_mute_dwork[decimator].dwork,
 				      msecs_to_jiffies(tx_unmute_delay));
 		if (tasha->tx_hpf_work[decimator].hpf_cut_off_freq !=
 							CF_MIN_3DB_150HZ)
-			queue_delayed_work(system_power_efficient_wq,
+			schedule_delayed_work(
 					&tasha->tx_hpf_work[decimator].dwork,
 					msecs_to_jiffies(300));
 		/* apply gain after decimator is enabled */
@@ -12650,9 +12603,8 @@ static int tasha_dig_core_power_collapse(struct tasha_priv *tasha,
 
 	if (req_state == POWER_COLLAPSE) {
 		if (tasha->power_active_ref == 0) {
-			queue_delayed_work(system_power_efficient_wq,
-					&tasha->power_gate_work,
-					msecs_to_jiffies(dig_core_collapse_timer * 1000));
+			schedule_delayed_work(&tasha->power_gate_work,
+			msecs_to_jiffies(dig_core_collapse_timer * 1000));
 		}
 	} else if (req_state == POWER_RESUME) {
 		if (tasha->power_active_ref == 1) {
