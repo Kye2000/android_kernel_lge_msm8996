@@ -11744,15 +11744,9 @@ static int tasha_set_decimator_rate(struct snd_soc_dai *dai,
 	struct snd_soc_codec *codec = dai->codec;
 	struct wcd9xxx_ch *ch;
 	struct tasha_priv *tasha = snd_soc_codec_get_drvdata(codec);
-<<<<<<< HEAD
 	u32 tx_port = 0;
 	u8 shift = 0, shift_val = 0, tx_mux_sel = 0;
 	u16 tx_port_reg = 0, tx_fs_reg = 0;
-=======
-	u32 tx_port;
-	u8 shift, shift_val, tx_mux_sel;
-	u16 tx_port_reg = 0, tx_fs_reg;
->>>>>>> cf6daef43324... ANDROID: fix uninitilized variable
 
 	list_for_each_entry(ch, &tasha->dai[dai->id].wcd9xxx_ch_list, list) {
 		int decimator = -1;
