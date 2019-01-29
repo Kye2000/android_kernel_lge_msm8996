@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -730,7 +730,7 @@ int adm_programable_channel_mixer(int port_id, int copp_idx, int session_id,
 	index = index + ch_mixer->input_channels[channel_index];
 	ret = adm_populate_channel_weight(&adm_pspd_params[index],
 					ch_mixer, channel_index);
-	if (!ret) {
+	if (ret) {
 		pr_err("%s: fail to get channel weight with error %d\n",
 			__func__, ret);
 		goto fail_cmd;
@@ -1649,7 +1649,7 @@ static int adm_memory_map_regions(phys_addr_t *buf_add, uint32_t mempool_id,
 						0xFFFFFFFF, &this_adm);
 		if (this_adm.apr == NULL) {
 			pr_err("%s: Unable to register ADM\n", __func__);
-			ret = -ENODEV;
+			ret = -ENETRESET;
 			return ret;
 		}
 		rtac_set_adm_handle(this_adm.apr);
@@ -2321,6 +2321,7 @@ non_mch_path:
 inval_ch_mod:
 	return rc;
 }
+extern int gis_24bits;
 
 int adm_arrange_mch_ep2_map(struct adm_cmd_device_open_v6 *open_v6,
 			 int channel_mode)
@@ -2392,18 +2393,15 @@ int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 	int ret = 0;
 	int port_idx, copp_idx, flags;
 	int tmp_port = q6audio_get_port_id(port_id);
+    //use 24bits to get rid of 16bits innate noise
+    if(gis_24bits){
+        bit_width = 24;
+        pr_err("Open adm sepcially for offload\n");
+    }
 
 	pr_debug("%s:port %#x path:%d rate:%d mode:%d perf_mode:%d,topo_id %d\n",
 		 __func__, port_id, path, rate, channel_mode, perf_mode,
 		 topology);
-
-
-	/* For AUDIO_RX_LGE topology only, force 24 bit */
-#ifdef CONFIG_MACH_LGE
-	if(topology == AUDIO_RX_LGE) {
-		bit_width = 24;
-	}
-#endif
 
 	port_id = q6audio_convert_virtual_to_portid(port_id);
 	port_idx = adm_validate_and_get_port_index(port_id);
@@ -2926,7 +2924,8 @@ int adm_close(int port_id, int perf_mode, int copp_idx)
 
 	int ret = 0, port_idx;
 	int copp_id = RESET_COPP_ID;
-
+    //use 24bits to get rid of 16bits innate noise
+    gis_24bits = 0;
 	pr_debug("%s: port_id=0x%x perf_mode: %d copp_idx: %d\n", __func__,
 		 port_id, perf_mode, copp_idx);
 
