@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -28,6 +28,8 @@
 #define AUD_VOL_BLOCK_SIZE	4096
 #define AUDIO_RX_CALIBRATION_SIZE	(AUD_PROC_BLOCK_SIZE + \
 						AUD_VOL_BLOCK_SIZE)
+#define SESSION_TYPE_RX 0
+#define SESSION_TYPE_TX 1
 enum {
 	ADM_CUSTOM_TOP_CAL = 0,
 	ADM_AUDPROC_CAL,
