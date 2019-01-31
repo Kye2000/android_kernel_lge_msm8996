@@ -1,9 +1,5 @@
-<<<<<<< HEAD
-/* Copyright (c) 2014-2015, 2016 The Linux Foundation. All rights reserved.
-=======
 /* Copyright (c) 2014-2016, 2018 The Linux Foundation.
  * All rights reserved.
->>>>>>> cd15aa7b62cd... diag: Initialize memory device memory pools
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
