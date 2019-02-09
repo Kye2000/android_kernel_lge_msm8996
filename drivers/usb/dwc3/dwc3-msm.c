@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -302,6 +302,7 @@ struct dwc3_msm {
 	struct power_supply	friends_usb_psy;
 	bool			friends_usb_enable;
 #endif
+	enum power_supply_type	usb_supply_type;
 	unsigned int		online;
 	bool			in_host_mode;
 	unsigned int		voltage_max;
@@ -2674,6 +2675,13 @@ static int dwc3_msm_suspend(struct dwc3_msm *mdwc)
 #ifdef CONFIG_LGE_USB_MAXIM_EVP
 	}
 #endif
+
+	if (!mdwc->in_host_mode && (mdwc->vbus_active && !mdwc->suspend)) {
+		dev_dbg(mdwc->dev,
+			"Received wakeup event before the core suspend\n");
+		return -EBUSY;
+	}
+
 	ret = dwc3_msm_prepare_suspend(mdwc);
 	if (ret)
 		return ret;
@@ -3250,6 +3258,9 @@ static int dwc3_msm_power_get_property_usb(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_ONLINE:
 		val->intval = mdwc->online;
+		break;
+	case POWER_SUPPLY_PROP_REAL_TYPE:
+		val->intval = mdwc->usb_supply_type;
 		break;
 	case POWER_SUPPLY_PROP_TYPE:
 #ifdef CONFIG_LGE_PM
@@ -4931,6 +4942,7 @@ static int dwc3_msm_gadget_vbus_draw(struct dwc3_msm *mdwc, unsigned mA)
 #ifdef CONFIG_LGE_PM_CABLE_DETECTION
 	struct dwc3 *dwc = platform_get_drvdata(mdwc->dwc3);
 #endif
+	union power_supply_propval propval;
 
 	if (mdwc->charging_disabled)
 		return 0;
@@ -4962,7 +4974,9 @@ static int dwc3_msm_gadget_vbus_draw(struct dwc3_msm *mdwc, unsigned mA)
 	else
 		power_supply_type = POWER_SUPPLY_TYPE_UNKNOWN;
 
-	power_supply_set_supply_type(&mdwc->usb_psy, power_supply_type);
+	propval.intval = power_supply_type;
+	mdwc->usb_psy.set_property(&mdwc->usb_psy,
+			POWER_SUPPLY_PROP_REAL_TYPE, &propval);
 
 skip_psy_type:
 

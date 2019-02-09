@@ -1968,11 +1968,7 @@ int gether_get_host_addr_cdc(struct net_device *net, char *host_addr, int len)
 		return -EINVAL;
 
 	dev = netdev_priv(net);
-#ifdef CONFIG_LGE_USB_G_ANDROID
-  snprintf(host_addr, len, "%pm", dev->host_mac);
-#else
-	snprintf(host_addr, len, "%pM", dev->host_mac);
-#endif
+	snprintf(host_addr, len, "%pm", dev->host_mac);
 
 	return strlen(host_addr);
 }
